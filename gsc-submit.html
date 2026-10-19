@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Submit Sitemap ke Search Console</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1d2330; --muted: #5d6677;
+    --line: #d9dde5; --accent: #1a5fd0; --accent-text: #ffffff;
+    --ok: #17703a; --err: #b3261e; --log: #eef0f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171d; --card: #1c2029; --text: #e7eaf0; --muted: #9aa3b4;
+      --line: #313746; --accent: #6aa0ff; --accent-text: #0d1117;
+      --ok: #55c785; --err: #ff8a80; --log: #11141a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 620px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.4rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 24px; color: var(--muted); }
+  section { background: var(--card); border: 1px solid var(--line);
+    border-radius: 8px; padding: 18px; margin-bottom: 16px; }
+  h2 { font-size: 1rem; margin: 0 0 12px; }
+  label { display: block; font-size: .9rem; color: var(--muted); margin-bottom: 4px; }
+  select, input[type=text] { width: 100%; padding: 10px; font: inherit; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 6px; margin-bottom: 12px; }
+  button { font: inherit; padding: 10px 16px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--accent); background: var(--accent); color: var(--accent-text); }
+  button.alt { background: transparent; color: var(--accent); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  #status { font-size: .9rem; color: var(--muted); margin: 0 0 8px; }
+  pre { background: var(--log); border-radius: 6px; padding: 12px; margin: 0;
+    max-height: 280px; overflow: auto; font-size: .85rem; white-space: pre-wrap; word-break: break-word; }
+  .ok { color: var(--ok); } .err { color: var(--err); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Submit sitemap ke Search Console</h1>
+  <p class="sub">Login dengan akun Google, pilih situs, lalu kirim atau cek sitemap.</p>
+
+  <section>
+    <h2>1. Login</h2>
+    <p id="status">Belum login.</p>
+    <button id="btnLogin">Login dengan Google</button>
+  </section>
+
+  <section>
+    <h2>2. Pilih situs</h2>
+    <label for="site">Situs di akun Anda</label>
+    <select id="site" disabled><option>Login dulu</option></select>
+    <label for="sitemap">URL sitemap</label>
+    <input type="text" id="sitemap" placeholder="https://contoh.com/sitemap.xml">
+    <div class="row">
+      <button id="btnSubmit" disabled>Submit sitemap</button>
+      <button id="btnList" class="alt" disabled>Lihat sitemap terdaftar</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Hasil</h2>
+    <pre id="log">Menunggu aksi.</pre>
+  </section>
+</main>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+  // Ganti dengan Client ID Anda (berakhiran .apps.googleusercontent.com)
+  const CLIENT_ID = "ISI_CLIENT_ID_ANDA.apps.googleusercontent.com";
+  const SCOPE = "https://www.googleapis.com/auth/webmasters";
+  const API = "https://www.googleapis.com/webmasters/v3";
+
+  let accessToken = null;
+  let tokenClient = null;
+  const $ = (id) => document.getElementById(id);
+
+  function log(msg, cls) {
+    const el = $("log");
+    el.className = cls || "";
+    el.textContent = typeof msg === "string" ? msg : JSON.stringify(msg, null, 2);
+  }
+
+  async function api(path, options = {}) {
+    const res = await fetch(API + path, {
+      ...options,
+      headers: { Authorization: "Bearer " + accessToken, ...(options.headers || {}) }
+    });
+    const text = await res.text();
+    let body = text;
+    try { body = text ? JSON.parse(text) : {}; } catch (e) {}
+    if (!res.ok) throw { status: res.status, body };
+    return body;
+  }
+
+  async function loadSites() {
+    const data = await api("/sites");
+    const sel = $("site");
+    sel.innerHTML = "";
+    (data.siteEntry || []).forEach((s) => {
+      const o = document.createElement("option");
+      o.value = s.siteUrl;
+      o.textContent = s.siteUrl + " (" + s.permissionLevel + ")";
+      sel.appendChild(o);
+    });
+    if (!sel.options.length) {
+      sel.innerHTML = "<option>Tidak ada situs terverifikasi</option>";
+      log("Akun ini belum punya situs di Search Console.", "err");
+      return;
+    }
+    sel.disabled = false;
+    $("btnSubmit").disabled = false;
+    $("btnList").disabled = false;
+    sel.dispatchEvent(new Event("change"));
+    log("Login berhasil. " + sel.options.length + " situs ditemukan.", "ok");
+  }
+
+  $("site").addEventListener("change", () => {
+    const site = $("site").value;
+    if (site && site.startsWith("http")) $("sitemap").value = site.replace(/\/?$/, "/") + "sitemap.xml";
+  });
+
+  window.addEventListener("load", () => {
+    const wait = setInterval(() => {
+      if (!window.google || !google.accounts) return;
+      clearInterval(wait);
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: CLIENT_ID,
+        scope: SCOPE,
+        callback: async (resp) => {
+          if (resp.error) { log("Login gagal: " + resp.error, "err"); return; }
+          accessToken = resp.access_token;
+          $("status").textContent = "Sudah login. Token berlaku sekitar 1 jam.";
+          try { await loadSites(); }
+          catch (e) { log(e, "err"); }
+        }
+      });
+    }, 100);
+  });
+
+  $("btnLogin").addEventListener("click", () => {
+    if (!tokenClient) { log("Library Google belum termuat, coba lagi sebentar.", "err"); return; }
+    tokenClient.requestAccessToken({ prompt: "consent" });
+  });
+
+  $("btnSubmit").addEventListener("click", async () => {
+    const site = $("site").value, sm = $("sitemap").value.trim();
+    if (!sm) { log("Isi URL sitemap dulu.", "err"); return; }
+    try {
+      await api("/sites/" + encodeURIComponent(site) + "/sitemaps/" + encodeURIComponent(sm), { method: "PUT" });
+      log("Sitemap terkirim: " + sm, "ok");
+    } catch (e) { log(e, "err"); }
+  });
+
+  $("btnList").addEventListener("click", async () => {
+    try {
+      const data = await api("/sites/" + encodeURIComponent($("site").value) + "/sitemaps");
+      log(data.sitemap ? data : "Belum ada sitemap terdaftar.");
+    } catch (e) { log(e, "err"); }
+  });
+</script>
+</body>
+</html>
